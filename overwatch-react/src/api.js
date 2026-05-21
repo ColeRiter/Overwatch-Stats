@@ -22,8 +22,12 @@ export async function getHeroDetails(heroKey) {
 
 export async function searchPlayer(name) {
     try {
-        const res = await fetch(`${BASE_URL}/players?name=${encodeURIComponent(name)}`);
-        return await res.json();
+        // Convert BattleTag format (# to -) if needed
+        const formattedName = name.replace("#", "-");
+        const res = await fetch(`${BASE_URL}/players?name=${encodeURIComponent(formattedName)}`);
+        const data = await res.json();
+        console.log("Search response:", data);
+        return data;
     } catch (err) {
         console.error("searchPlayer failed", err);
         return {};
@@ -40,6 +44,30 @@ export async function getPlayerSummary(playerId) {
     }
 }
 
+export async function getPlayerStatsSummary(playerId, filters = {}) {
+    try {
+        const params = new URLSearchParams();
+        if (filters.gamemode) params.set("gamemode", filters.gamemode);
+        if (filters.platform) params.set("platform", filters.platform);
+
+        const query = params.toString();
+        const res = await fetch(
+            `${BASE_URL}/players/${encodeURIComponent(playerId)}/stats/summary${query ? `?${query}` : ""}`
+        );
+
+        if (!res.ok) {
+            const text = await res.text();
+            console.error(`getPlayerStatsSummary failed (${res.status}): ${text}`);
+            return null;
+        }
+
+        return await res.json();
+    } catch (err) {
+        console.error("getPlayerStatsSummary failed", err);
+        return null;
+    }
+}
+
 export async function getHeroStats() {
     try {
         const res = await fetch(
@@ -50,6 +78,28 @@ export async function getHeroStats() {
         return json.data || [];
 
     } catch {
+        return [];
+    }
+}
+
+export async function getroledescription(role) {
+    try {
+        const res = await fetch(`${BASE_URL}/roles`);
+        const roles = await res.json();
+        return roles.find(r => r.key === role) || null;
+    }
+    catch (err) {
+        console.error("getroledescription failed", err);
+        return null;
+    }
+}
+
+export async function getMaps() {
+    try {
+        const res = await fetch(`${BASE_URL}/maps`);
+        return await res.json();
+    } catch (err) {
+        console.error("getMaps failed", err);
         return [];
     }
 }
