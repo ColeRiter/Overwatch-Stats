@@ -20,30 +20,50 @@ export default function HeroDetail({ hero, onBack }) {
         }
     }
 
-    if (!data) return <p>Loading...</p>;
+    if (!data) return <p className="loading-screen">Loading...</p>;
 
     return (
-        <div>
-            <button onClick={onBack}>← Back</button>
+        <div className="detail-page">
+            <button className="detail-back" onClick={onBack}>← Back</button>
 
-            <h1>{data.name}</h1>
-            <img src={data.portrait} alt={data.name} />
-            <p>{data.description}</p>
-            <p>
-                <b>Role:</b>
-                <span style={{ marginLeft: roleData?.icon ? 8 : 4 }}>{data.role}: {roleData.description}</span>
-            </p>
-            <p><b>Subrole:</b> {data.subrole}</p>
-            <h3>Abilities</h3>
-            <ul>
-                {data.abilities.map(a => (
-                    <li key={a.name}>
-                        <b>{a.name}</b>: {a.description}
-                    </li>
-                ))}
-            </ul>
+            <div className="detail-card">
+                <h1>{data.name}</h1>
+                <img className="detail-image" src={data.portrait} alt={data.name} />
+                <p className="detail-description">{data.description}</p>
 
-            <p>{data.story?.summary}</p>
+                <div className="detail-meta">
+                    <div className="detail-meta-item">
+                        <b>Role</b>
+                        <div className="detail-meta-value">
+                            {roleData?.icon && (
+                                <img className="meta-icon" src={roleData.icon} alt={roleData.name} />
+                            )}
+                            <span>{data.role}</span>
+                        </div>
+                    </div>
+                    <div className="detail-meta-item">
+                        <b>Subrole</b>
+                        <span>{data.subrole}</span>
+                    </div>
+                </div>
+
+                <h3>Abilities</h3>
+                <ul className="ability-list">
+                    {data.abilities.map(a => (
+                        <li key={a.name} className="ability-item">
+                            <strong>{a.name}</strong>
+                            <p>{a.description}</p>
+                        </li>
+                    ))}
+                </ul>
+
+                {data.story?.summary && (
+                    <div className="detail-story">
+                        <h3>Story</h3>
+                        <p>{data.story.summary}</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

@@ -3,6 +3,8 @@ import { getHeroes, getHeroStats, getMaps } from "./api";
 import HeroDetail from "./components/HeroDetail.jsx";
 import MapDetail from "./components/MapDetail.jsx";
 import PlayerSearch from "./components/PlayerSearch.jsx";
+import "./index.css";
+import "./styles.css";
 
 function App() {
     const [heroes, setHeroes] = useState([]);
@@ -61,81 +63,82 @@ function App() {
 
     if (loading) {
         return (
-            <div>
-                <h1>Overwatch Stats</h1>
-                <p>Loading…</p>
+            <div className="app-shell">
+                <header className="page-header">
+                    <h1>Overwatch Stats</h1>
+                </header>
+                <div className="loading-screen">Loading…</div>
             </div>
         );
     }
 
     return (
-        <div>
-            <h1>Overwatch Stats</h1>
+        <div className="app-shell">
+            <header className="page-header">
+                <div>
+                    <h1>Overwatch Stats</h1>
+                    <p className="page-subtitle">View heroes and maps or search for players and compare</p>
+                </div>
+                <div className="view-toggle">
+                    <button
+                        type="button"
+                        className={view === "heroes" ? "toggle-button active" : "toggle-button"}
+                        onClick={() => setView("heroes")}
+                    >
+                        Heroes
+                    </button>
+                    <button
+                        type="button"
+                        className={view === "maps" ? "toggle-button active" : "toggle-button"}
+                        onClick={() => setView("maps")}
+                    >
+                        Maps
+                    </button>
+                </div>
+            </header>
 
             {error && (
-                <div style={{ color: "red", marginBottom: 12 }}>{error}</div>
+                <div className="error-message">{error}</div>
             )}
 
-            <PlayerSearch />
-
-            <div style={{ marginBottom: 20 }}>
-                <label>
-                    <input
-                        type="radio"
-                        value="heroes"
-                        checked={view === "heroes"}
-                        onChange={(e) => setView(e.target.value)}
-                    />
-                    Heroes
-                </label>
-                <label style={{ marginLeft: 20 }}>
-                    <input
-                        type="radio"
-                        value="maps"
-                        checked={view === "maps"}
-                        onChange={(e) => setView(e.target.value)}
-                    />
-                    Maps
-                </label>
+            <div className="search-container">
+                <PlayerSearch />
             </div>
 
-            {view === "heroes" && (
-                <div>
-                    {heroes.length === 0 && (
-                        <p>No heroes available.</p>
-                    )}
+            <div className="cards-grid">
+                {view === "heroes" && heroes.length === 0 && (
+                    <p className="empty-state">No heroes available.</p>
+                )}
 
-                    {heroes.map(hero => (
-                        <div
-                            key={hero.key}
-                            onClick={() => setSelectedHero(hero)}
-                            style={{ cursor: "pointer", display: "inline-block", margin: 12, width: 160, verticalAlign: "top" }}
-                        >
-                            <img src={hero.portrait} alt={hero.name} width="120" />
-                            <h3 style={{ margin: "8px 0 4px" }}>{hero.name}</h3>
-                        </div>
-                    ))}
-                </div>
-            )}
+                {view === "maps" && maps.length === 0 && (
+                    <p className="empty-state">No maps available.</p>
+                )}
 
-            {view === "maps" && (
-                <div>
-                    {maps.length === 0 && (
-                        <p>No maps available.</p>
-                    )}
+                {view === "heroes" && heroes.map(hero => (
+                    <button
+                        key={hero.key}
+                        type="button"
+                        className="card"
+                        onClick={() => setSelectedHero(hero)}
+                    >
+                        <img className="card-image" src={hero.portrait} alt={hero.name} />
+                        <h3 className="card-title">{hero.name}</h3>
+                    </button>
+                ))}
 
-                    {maps.map(map => (
-                        <div
-                            key={map.key}
-                            onClick={() => setSelectedMap(map)}
-                            style={{ cursor: "pointer", display: "inline-block", margin: 12, width: 160, verticalAlign: "top" }}
-                        >
-                            <img src={map.screenshot} alt={map.name} width="120" height="90" style={{ objectFit: "cover" }} />
-                            <h3 style={{ margin: "8px 0 4px" }}>{map.name}</h3>
-                        </div>
-                    ))}
-                </div>
-            )}
+                {view === "maps" && maps.map(map => (
+                    <button
+                        key={map.key}
+                        type="button"
+                        className="card"
+                        onClick={() => setSelectedMap(map)}
+                    >
+                        <img className="card-image" src={map.screenshot} alt={map.name} />
+                        <h3 className="card-title">{map.name}</h3>
+                        <p className="card-subtitle">{map.location}</p>
+                    </button>
+                ))}
+            </div>
         </div>
     );
 }
