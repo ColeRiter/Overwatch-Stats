@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 import { getHeroDetails, getroledescription } from "../api";
 
 export default function HeroDetail({ hero, onBack }) {
 
     const [data, setData] = useState(null);
     const [roleData, setRoleData] = useState(null);
-
-    useEffect(() => {
-        load();
-    }, []);
 
     async function load() {
         const res = await getHeroDetails(hero.key);
@@ -19,6 +16,10 @@ export default function HeroDetail({ hero, onBack }) {
             setRoleData(roleInfo);
         }
     }
+
+    useEffect(() => {
+        load();
+    }, []);
 
     if (!data) return <p className="loading-screen">Loading...</p>;
 

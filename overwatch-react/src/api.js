@@ -1,4 +1,75 @@
-const BASE_URL = "https://overfast-api.tekrop.fr";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
+function authHeaders(token) {
+    return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function requestJson(path, options = {}) {
+    const res = await fetch(`${BASE_URL}${path}`, {
+        ...options,
+        headers: {
+            "Content-Type": "application/json",
+            ...(options.headers || {}),
+        },
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+        throw new Error(data.error || `Request failed with status ${res.status}`);
+    }
+
+    return data;
+}
+
+export async function registerUser(username, password) {
+    return requestJson("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+    });
+}
+
+export async function loginUser(username, password) {
+    return requestJson("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+    });
+}
+
+export async function logoutUser(token) {
+    return requestJson("/auth/logout", {
+        method: "POST",
+        headers: authHeaders(token),
+    });
+}
+
+export async function getCurrentUser(token) {
+    return requestJson("/auth/me", {
+        headers: authHeaders(token),
+    });
+}
+
+export async function linkBattleNetAccount(token, profile) {
+    return requestJson("/profile/battlenet", {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify(profile),
+    });
+}
+
+export async function getSearchHistory(token) {
+    return requestJson("/search-history", {
+        headers: authHeaders(token),
+    });
+}
+
+export async function saveSearchHistory(token, search) {
+    return requestJson("/search-history", {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify(search),
+    });
+}
 
 export async function getHeroes() {
     try {

@@ -1,5 +1,13 @@
-import { useState } from "react";
-import { searchPlayer, getPlayerSummary, getPlayerStatsSummary } from "../api";
+import { useEffect, useState } from "react";
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
+import {
+    getSearchHistory,
+    linkBattleNetAccount,
+    searchPlayer,
+    getPlayerSummary,
+    getPlayerStatsSummary,
+    saveSearchHistory,
+} from "../api";
 
 function formatNumber(value) {
     if (typeof value !== "number" || Number.isNaN(value)) return value;
@@ -13,13 +21,6 @@ function renderStatValue(value, suffix = "") {
         return `${formatNumber(value)}${suffix}`;
     }
     return value;
-}
-
-function formatDelta(value, suffix = "") {
-    if (value == null || value === 0) return null;
-    if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) return null;
-    const sign = value > 0 ? "+" : "";
-    return `${sign}${formatNumber(value)}${suffix}`;
 }
 
 function getHeroSummaryFields(stats) {
@@ -40,10 +41,12 @@ function getHeroSummaryFields(stats) {
     };
 }
 
-export default function PlayerSearch() {
+export default function PlayerSearch({ authToken, user, onUserUpdate }) {
 
     const [input, setInput] = useState("");
+    const [linkInput, setLinkInput] = useState("");
     const [player, setPlayer] = useState(null);
+    const [currentPlayerId, setCurrentPlayerId] = useState("");
     const [playerStats, setPlayerStats] = useState(null);
     const [compareMode, setCompareMode] = useState(false);
     const [compareInput, setCompareInput] = useState("");
@@ -54,16 +57,99 @@ export default function PlayerSearch() {
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [sortField, setSortField] = useState("winrate");
     const [error, setError] = useState(null);
+    const [linkError, setLinkError] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [linkLoading, setLinkLoading] = useState(false);
     const [compareLoading, setCompareLoading] = useState(false);
+
+    async function loadSavedSearches() {
+        if (!authToken || !user) {
+            setSuggestions([]);
+            return;
+        }
+
+        try {
+            const data = await getSearchHistory(authToken);
+            const historySuggestions = (data.history ?? []).map((item) => ({
+                label: item.username || item.query,
+                query: item.query,
+                score: new Date(item.searched_at).getTime(),
+            }));
+
+            setSuggestions(historySuggestions.slice(0, 3));
+
+            if (historySuggestions[0]) {
+                setInput(historySuggestions[0].query);
+            }
+        } catch (err) {
+            console.error("loadSavedSearches failed", err);
+        }
+    }
+
+    useEffect(() => {
+        loadSavedSearches();
+    }, [authToken, user?.id]);
+
+    useEffect(() => {
+        if (!user) {
+            setLinkInput("");
+            return;
+        }
+
+        setLinkInput(user.battlenet_tag || "");
+
+        if (user.battlenet_player_id) {
+            loadPlayerById(user.battlenet_player_id, {
+                query: user.battlenet_tag || user.battlenet_username || user.battlenet_player_id,
+                clearCompare: true,
+            });
+        }
+    }, [user?.id, user?.battlenet_player_id]);
+
+    async function loadPlayerById(playerId, options = {}) {
+        const summary = await getPlayerSummary(playerId);
+        const statsSummary = await getPlayerStatsSummary(playerId);
+
+        if (!summary) {
+            throw new Error("Failed to load player summary.");
+        }
+
+        if (options.clearCompare) {
+            setCompareMode(false);
+            setCompareInput("");
+            setComparePlayer(null);
+            setComparePlayerStats(null);
+            setCompareError(null);
+        }
+
+        setInput(options.query || summary.username || playerId);
+        setPlayer(summary);
+        setCurrentPlayerId(playerId);
+        setPlayerStats(statsSummary);
+
+        return { summary, statsSummary };
+    }
+
+    async function linkPlayerToAccount({ playerId, battleTag, username, avatar }) {
+        if (!authToken || !user) return;
+
+        const data = await linkBattleNetAccount(authToken, {
+            battlenet_tag: battleTag,
+            player_id: playerId,
+            username,
+            avatar,
+        });
+        onUserUpdate?.(data.user);
+    }
 
     async function handleSearch() {
         if (!input || input.trim().length === 0) return;
 
         setLoading(true);
-        setError(null);
-        setPlayer(null);
-        setPlayerStats(null);
+            setError(null);
+            setPlayer(null);
+            setCurrentPlayerId("");
+            setPlayerStats(null);
         setCompareMode(false);
         setCompareInput("");
         setComparePlayer(null);
@@ -79,13 +165,9 @@ export default function PlayerSearch() {
                 return;
             }
 
-            const summary = await getPlayerSummary(found.player_id);
-            const statsSummary = await getPlayerStatsSummary(found.player_id);
-
-            if (!summary) {
-                setError("Failed to load player summary.");
-                return;
-            }
+            const { summary, statsSummary } = await loadPlayerById(found.player_id, {
+                query: input.trim(),
+            });
 
             const newSuggestions = (res.results ?? [])
                 .map((item) => ({
@@ -100,6 +182,20 @@ export default function PlayerSearch() {
             setSuggestions(newSuggestions);
             setPlayer(summary);
             setPlayerStats(statsSummary);
+
+            if (authToken && user) {
+                try {
+                    await saveSearchHistory(authToken, {
+                        player_id: found.player_id,
+                        query: input.trim(),
+                        username: summary.username || found.username || found.name,
+                        avatar: summary.avatar,
+                    });
+                    await loadSavedSearches();
+                } catch (err) {
+                    console.error("saveSearchHistory failed", err);
+                }
+            }
         } catch (err) {
             console.error("Player search failed", err);
             setError("Error fetching player or stats. Check console for details.");
@@ -107,6 +203,62 @@ export default function PlayerSearch() {
             setPlayerStats(null);
         } finally {
             setLoading(false);
+        }
+    }
+
+    async function handleLinkBattleTag() {
+        if (!authToken || !user || !linkInput.trim()) return;
+
+        setLinkLoading(true);
+        setLinkError(null);
+        setError(null);
+
+        try {
+            const res = await searchPlayer(linkInput);
+            const found = res.results?.[0];
+
+            if (!found) {
+                setLinkError("No player found for that BattleTag.");
+                return;
+            }
+
+            const { summary } = await loadPlayerById(found.player_id, {
+                query: linkInput.trim(),
+                clearCompare: true,
+            });
+
+            await linkPlayerToAccount({
+                playerId: found.player_id,
+                battleTag: linkInput.trim(),
+                username: summary.username || found.username || found.name,
+                avatar: summary.avatar,
+            });
+        } catch (err) {
+            console.error("handleLinkBattleTag failed", err);
+            setLinkError(err.message || "Failed to link BattleTag.");
+        } finally {
+            setLinkLoading(false);
+        }
+    }
+
+    async function handleLinkCurrentPlayer() {
+        if (!authToken || !user || !player || !currentPlayerId) return;
+
+        setLinkLoading(true);
+        setLinkError(null);
+
+        try {
+            await linkPlayerToAccount({
+                playerId: currentPlayerId,
+                battleTag: input.trim(),
+                username: player.username,
+                avatar: player.avatar,
+            });
+        } catch (err) {
+            console.error("handleLinkCurrentPlayer failed", err);
+            setLinkError(err.message || "Failed to link player.");
+        } finally {
+            setLinkLoading(false);
         }
     }
 
@@ -294,6 +446,40 @@ export default function PlayerSearch() {
     return (
         <div style={{ marginBottom: 20 }}>
             <h3>Player Search</h3>
+            {user && (
+                <p style={{ marginTop: -8, color: "#566071" }}>
+                    Last searches are saved for {user.username}.
+                </p>
+            )}
+            {user && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", margin: "10px 0 14px" }}>
+                    <input
+                        type="text"
+                        value={linkInput}
+                        onChange={(e) => setLinkInput(e.target.value)}
+                        placeholder="Link your BattleTag"
+                        style={{ padding: "8px", width: "220px" }}
+                    />
+                    <button
+                        type="button"
+                        onClick={handleLinkBattleTag}
+                        disabled={linkLoading}
+                        style={{ padding: "8px 16px" }}
+                    >
+                        {linkLoading ? "Linking..." : user.battlenet_player_id ? "Update Link" : "Link BattleTag"}
+                    </button>
+                    {user.battlenet_username && (
+                        <span style={{ alignSelf: "center", color: "#566071" }}>
+                            Linked: {user.battlenet_username}
+                        </span>
+                    )}
+                </div>
+            )}
+            {linkError && (
+                <p style={{ color: "red", marginTop: "8px" }}>
+                    {linkError}
+                </p>
+            )}
             <div style={{ position: "relative", display: "inline-block" }}>
                 <input
                     type="text"
@@ -356,6 +542,17 @@ export default function PlayerSearch() {
                     style={{ padding: "8px 14px", marginLeft: 12 }}
                 >
                     {compareMode ? "Hide Compare" : "Compare Player"}
+                </button>
+            )}
+
+            {user && player && (
+                <button
+                    type="button"
+                    onClick={handleLinkCurrentPlayer}
+                    disabled={linkLoading}
+                    style={{ padding: "8px 14px", marginLeft: 12 }}
+                >
+                    {linkLoading ? "Linking..." : "Link This Player"}
                 </button>
             )}
 
