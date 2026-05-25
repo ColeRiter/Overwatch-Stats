@@ -41,17 +41,107 @@ function getHeroSummaryFields(stats) {
     };
 }
 
-export default function PlayerSearch({ authToken, user, onUserUpdate }) {
+function titleCase(value) {
+    if (!value) return "";
+    return String(value).replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatRank(rankData) {
+    if (!rankData) return "Unranked";
+
+    if (typeof rankData === "string") return titleCase(rankData);
+
+    const division = rankData.division ?? rankData.rank ?? rankData.tier_name ?? rankData.skill_tier;
+    const tier = rankData.tier ?? rankData.rank_tier ?? rankData.division_tier;
+    const rating = rankData.rating ?? rankData.sr;
+
+    if (division && tier) return `${titleCase(division)} ${tier}`;
+    if (division) return titleCase(division);
+    if (tier) return `Tier ${tier}`;
+    if (rating) return `${rating} SR`;
+
+    return "Unranked";
+}
+
+const RANK_ORDER = ["bronze", "silver", "gold", "platinum", "diamond", "master", "grandmaster", "champion"];
+
+function normalizeRankName(value) {
+    if (!value) return "";
+    const rankName = String(value).toLowerCase().replace(/[\s_-]/g, "");
+
+    if (rankName.startsWith("plat")) return "platinum";
+    if (rankName.startsWith("grandmaster") || rankName.startsWith("grandmasters")) return "grandmaster";
+    if (rankName.startsWith("master") || rankName.startsWith("masters")) return "master";
+
+    return RANK_ORDER.find((rank) => rankName.startsWith(rank)) || "";
+}
+
+function getRankScore(rankData) {
+    if (!rankData) return null;
+
+    if (typeof rankData === "string") {
+        const match = rankData.match(/(bronze|silver|gold|plat(?:inum)?|diamond|masters?|grand\s*masters?|grandmasters?|champion)\s*(\d)?/i);
+        if (!match) return null;
+
+        const rank = normalizeRankName(match[1]);
+        const tier = match[2] ? Number(match[2]) : 1;
+        return getRankScore({ division: rank, tier });
+    }
+
+    const rank = normalizeRankName(rankData.division ?? rankData.rank ?? rankData.tier_name ?? rankData.skill_tier);
+    if (!rank) return null;
+
+    const rankIndex = RANK_ORDER.indexOf(rank);
+    const tierValue = Number(rankData.tier ?? rankData.rank_tier ?? rankData.division_tier ?? 1);
+    const safeTier = Number.isFinite(tierValue) ? Math.min(Math.max(tierValue, 1), 5) : 1;
+
+    return rankIndex * 5 + (6 - safeTier);
+}
+
+function getCompetitiveRanks(playerData) {
+    const competitive = playerData?.competitive;
+    if (!competitive) return [];
+
+    const platformRanks = competitive.pc ?? competitive.console ?? competitive;
+    const roleOrder = ["tank", "damage", "support", "open"];
+
+    return roleOrder
+        .map((role) => {
+            const rankData = platformRanks?.[role];
+            if (!rankData) return null;
+
+            return {
+                role,
+                label: role === "open" ? "Open Queue" : titleCase(role),
+                rank: formatRank(rankData),
+                score: getRankScore(rankData),
+                icon: rankData.rank_icon ?? rankData.icon ?? rankData.role_icon,
+            };
+        })
+        .filter(Boolean);
+}
+
+export default function PlayerSearch({
+    authToken,
+    user,
+    onUserUpdate,
+    searchRequest,
+    hideSearchControls = false,
+    showResults = true,
+    title = "Player Search",
+}) {
 
     const [input, setInput] = useState("");
     const [linkInput, setLinkInput] = useState("");
     const [player, setPlayer] = useState(null);
     const [currentPlayerId, setCurrentPlayerId] = useState("");
     const [playerStats, setPlayerStats] = useState(null);
+    const [competitiveStats, setCompetitiveStats] = useState(null);
     const [compareMode, setCompareMode] = useState(false);
     const [compareInput, setCompareInput] = useState("");
     const [comparePlayer, setComparePlayer] = useState(null);
     const [comparePlayerStats, setComparePlayerStats] = useState(null);
+    const [compareCompetitiveStats, setCompareCompetitiveStats] = useState(null);
     const [compareError, setCompareError] = useState(null);
     const [suggestions, setSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -106,9 +196,20 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
         }
     }, [user?.id, user?.battlenet_player_id]);
 
+    useEffect(() => {
+        const requestedQuery = searchRequest?.query?.trim();
+        if (!requestedQuery) return;
+
+        setInput(requestedQuery);
+        handleSearch(requestedQuery);
+    }, [searchRequest?.token]);
+
     async function loadPlayerById(playerId, options = {}) {
-        const summary = await getPlayerSummary(playerId);
-        const statsSummary = await getPlayerStatsSummary(playerId);
+        const [summary, statsSummary, competitiveStatsSummary] = await Promise.all([
+            getPlayerSummary(playerId),
+            getPlayerStatsSummary(playerId),
+            getPlayerStatsSummary(playerId, { gamemode: "competitive" }),
+        ]);
 
         if (!summary) {
             throw new Error("Failed to load player summary.");
@@ -119,6 +220,7 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
             setCompareInput("");
             setComparePlayer(null);
             setComparePlayerStats(null);
+            setCompareCompetitiveStats(null);
             setCompareError(null);
         }
 
@@ -126,8 +228,9 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
         setPlayer(summary);
         setCurrentPlayerId(playerId);
         setPlayerStats(statsSummary);
+        setCompetitiveStats(competitiveStatsSummary);
 
-        return { summary, statsSummary };
+        return { summary, statsSummary, competitiveStatsSummary };
     }
 
     async function linkPlayerToAccount({ playerId, battleTag, username, avatar }) {
@@ -142,22 +245,25 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
         onUserUpdate?.(data.user);
     }
 
-    async function handleSearch() {
-        if (!input || input.trim().length === 0) return;
+    async function handleSearch(searchValue = input) {
+        const trimmedInput = searchValue.trim();
+        if (!trimmedInput) return;
 
         setLoading(true);
             setError(null);
             setPlayer(null);
             setCurrentPlayerId("");
             setPlayerStats(null);
+            setCompetitiveStats(null);
         setCompareMode(false);
         setCompareInput("");
         setComparePlayer(null);
         setComparePlayerStats(null);
+        setCompareCompetitiveStats(null);
         setCompareError(null);
 
         try {
-            const res = await searchPlayer(input);
+            const res = await searchPlayer(trimmedInput);
             const found = res.results?.[0];
 
             if (!found) {
@@ -166,7 +272,7 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
             }
 
             const { summary, statsSummary } = await loadPlayerById(found.player_id, {
-                query: input.trim(),
+                query: trimmedInput,
             });
 
             const newSuggestions = (res.results ?? [])
@@ -187,7 +293,7 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                 try {
                     await saveSearchHistory(authToken, {
                         player_id: found.player_id,
-                        query: input.trim(),
+                        query: trimmedInput,
                         username: summary.username || found.username || found.name,
                         avatar: summary.avatar,
                     });
@@ -201,6 +307,7 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
             setError("Error fetching player or stats. Check console for details.");
             setPlayer(null);
             setPlayerStats(null);
+            setCompetitiveStats(null);
         } finally {
             setLoading(false);
         }
@@ -269,6 +376,7 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
         setCompareError(null);
         setComparePlayer(null);
         setComparePlayerStats(null);
+        setCompareCompetitiveStats(null);
 
         try {
             const res = await searchPlayer(compareInput);
@@ -279,8 +387,11 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                 return;
             }
 
-            const summary = await getPlayerSummary(found.player_id);
-            const statsSummary = await getPlayerStatsSummary(found.player_id);
+            const [summary, statsSummary, competitiveStatsSummary] = await Promise.all([
+                getPlayerSummary(found.player_id),
+                getPlayerStatsSummary(found.player_id),
+                getPlayerStatsSummary(found.player_id, { gamemode: "competitive" }),
+            ]);
 
             if (!summary) {
                 setCompareError("Failed to load compare player summary.");
@@ -289,11 +400,13 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
 
             setComparePlayer(summary);
             setComparePlayerStats(statsSummary);
+            setCompareCompetitiveStats(competitiveStatsSummary);
         } catch (err) {
             console.error("Compare search failed", err);
             setCompareError("Error fetching compare player or stats. Check console for details.");
             setComparePlayer(null);
             setComparePlayerStats(null);
+            setCompareCompetitiveStats(null);
         } finally {
             setCompareLoading(false);
         }
@@ -340,21 +453,54 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
         setShowSuggestions(false);
     }
 
-    const heroStats = playerStats?.heroes ? Object.entries(playerStats.heroes).map(([heroKey, heroData]) => {
+    const primaryHeroStatsByKey = playerStats?.heroes ?? {};
+    const compareHeroStatsByKey = comparePlayerStats?.heroes ?? {};
+    const sharedHeroKeys = Array.from(new Set([
+        ...Object.keys(primaryHeroStatsByKey),
+        ...(comparePlayer ? Object.keys(compareHeroStatsByKey) : []),
+    ])).sort((heroA, heroB) => {
+        const heroASummary = getHeroSummaryFields(primaryHeroStatsByKey[heroA])
+            ?? getHeroSummaryFields(compareHeroStatsByKey[heroA]);
+        const heroBSummary = getHeroSummaryFields(primaryHeroStatsByKey[heroB])
+            ?? getHeroSummaryFields(compareHeroStatsByKey[heroB]);
+        const heroAValue = getSortValue(heroASummary, sortField);
+        const heroBValue = getSortValue(heroBSummary, sortField);
+        return heroBValue - heroAValue;
+    });
+
+    const heroStats = sharedHeroKeys.map((heroKey) => ({
+        heroKey,
+        heroData: primaryHeroStatsByKey[heroKey] ?? null,
+        summary: getHeroSummaryFields(primaryHeroStatsByKey[heroKey]),
+    }));
+
+    const competitiveHeroStats = competitiveStats?.heroes ? Object.entries(competitiveStats.heroes).map(([heroKey, heroData]) => {
         return {
             heroKey,
             heroData,
             summary: getHeroSummaryFields(heroData),
         };
-    }).sort((a, b) => {
-        const aValue = getSortValue(a.summary, sortField);
-        const bValue = getSortValue(b.summary, sortField);
+    }).filter((item) => item.summary).sort((a, b) => {
+        const aValue = getSortValue(a.summary, "gamesPlayed");
+        const bValue = getSortValue(b.summary, "gamesPlayed");
         return bValue - aValue;
     }) : [];
 
-    const compareHeroStats = (comparePlayerStats?.heroes && heroStats.length) ? heroStats.map(({ heroKey, summary: primarySummary }) => {
-        const heroData = comparePlayerStats.heroes[heroKey];
-        if (!heroData) return null;
+    const compareCompetitiveHeroStats = compareCompetitiveStats?.heroes ? Object.entries(compareCompetitiveStats.heroes).map(([heroKey, heroData]) => {
+        return {
+            heroKey,
+            heroData,
+            summary: getHeroSummaryFields(heroData),
+        };
+    }).filter((item) => item.summary).sort((a, b) => {
+        const aValue = getSortValue(a.summary, "gamesPlayed");
+        const bValue = getSortValue(b.summary, "gamesPlayed");
+        return bValue - aValue;
+    }) : [];
+
+    const compareHeroStats = comparePlayerStats?.heroes ? sharedHeroKeys.map((heroKey) => {
+        const heroData = compareHeroStatsByKey[heroKey] ?? null;
+        const primarySummary = getHeroSummaryFields(primaryHeroStatsByKey[heroKey]);
         const summary = getHeroSummaryFields(heroData);
 
         return {
@@ -362,16 +508,104 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
             heroData,
             summary,
             delta: {
-                gamesPlayed: getDelta(primarySummary.gamesPlayed, summary.gamesPlayed),
-                winrate: getDelta(primarySummary.winrate, summary.winrate),
-                kda: getDelta(primarySummary.kda, summary.kda),
-                damagePerGame: getDelta(primarySummary.damagePerGame, summary.damagePerGame),
-                healingPerGame: getDelta(primarySummary.healingPerGame, summary.healingPerGame),
+                gamesPlayed: getDelta(primarySummary?.gamesPlayed, summary?.gamesPlayed),
+                winrate: getDelta(primarySummary?.winrate, summary?.winrate),
+                kda: getDelta(primarySummary?.kda, summary?.kda),
+                damagePerGame: getDelta(primarySummary?.damagePerGame, summary?.damagePerGame),
+                healingPerGame: getDelta(primarySummary?.healingPerGame, summary?.healingPerGame),
             },
         };
-    }).filter(Boolean) : [];
+    }) : [];
 
-    function renderPlayerCard({ playerData, statsData, heroStatsData, showSort = false, isCompare = false }) {
+    function getRankDelta(rank, baselineRanks) {
+        const baselineRank = baselineRanks.find((item) => item.role === rank.role);
+        if (rank.score == null || baselineRank?.score == null) return null;
+        return rank.score - baselineRank.score;
+    }
+
+    function renderRankDelta(rank, baselineRanks) {
+        const delta = getRankDelta(rank, baselineRanks);
+        if (!delta) return null;
+
+        const color = delta > 0 ? "#187b37" : "#b02a37";
+        const sign = delta > 0 ? "+" : "";
+        const label = Math.abs(delta) === 1 ? "division" : "divisions";
+
+        return (
+            <span style={{ color, fontWeight: 600 }}>
+                {sign}{delta} {label}
+            </span>
+        );
+    }
+
+    function renderCompetitiveSummary(statsData, playerData, heroStatsData, baselineRanks = []) {
+        const rankRows = getCompetitiveRanks(playerData);
+
+        if (!statsData) {
+            return (
+                <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 10, marginTop: 16 }}>
+                    <h4 style={{ margin: "0 0 8px" }}>Competitive statistics</h4>
+                    {rankRows.length > 0 && (
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                            {rankRows.map((rank) => (
+                                <span key={rank.role} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                                    {rank.icon && <img src={rank.icon} alt="" width="24" height="24" />}
+                                    <b>{rank.label}:</b> {rank.rank}
+                                    {renderRankDelta(rank, baselineRanks)}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    <p style={{ margin: 0 }}><i>No competitive stats available.</i></p>
+                </div>
+            );
+        }
+
+        return (
+            <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 10, marginTop: 16 }}>
+                <h4 style={{ margin: "0 0 8px" }}>Competitive statistics</h4>
+                {rankRows.length > 0 ? (
+                    <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                        {rankRows.map((rank) => (
+                            <div key={rank.role} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                {rank.icon && <img src={rank.icon} alt="" width="28" height="28" />}
+                                <b>{rank.label}</b>
+                                <span>{rank.rank}</span>
+                                {renderRankDelta(rank, baselineRanks)}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p style={{ margin: "0 0 12px" }}><i>No competitive rank available.</i></p>
+                )}
+                {heroStatsData.length === 0 ? (
+                    <p style={{ margin: 0 }}><i>No competitive hero stats available.</i></p>
+                ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                        {heroStatsData.slice(0, 3).map(({ heroKey, summary }) => (
+                            <div key={heroKey} style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                                <b>{heroKey}</b>
+                                <span>Games: {renderStatValue(summary.gamesPlayed)}</span>
+                                <span>Win rate: {renderStatValue(summary.winrate, "%")}</span>
+                                <span>KDA: {renderStatValue(summary.kda)}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    function renderPlayerCard({
+        playerData,
+        statsData,
+        heroStatsData,
+        competitiveStatsData,
+        competitiveHeroStatsData = [],
+        baselineRanks = [],
+        showSort = false,
+        isCompare = false,
+    }) {
         return (
             <div style={{ border: "1px solid #ccc", padding: "10px", minWidth: 0, width: "100%" }}>
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -383,6 +617,8 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                         <p><b>Last Updated:</b> {formatDate(playerData.last_updated_at)}</p>
                     </div>
                 </div>
+
+                {renderCompetitiveSummary(competitiveStatsData, playerData, competitiveHeroStatsData, baselineRanks)}
 
                 {statsData ? (
                     <div style={{ marginTop: 16 }}>
@@ -426,11 +662,11 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                                 return (
                                     <div key={heroKey} style={{ border: "1px solid #ddd", borderRadius: 8, padding: 10 }}>
                                         <h5 style={{ margin: "0 0 8px" }}>{heroKey}</h5>
-                                        <p style={{ margin: "2px 0" }}><b>Games:</b> {renderStatValue(summary.gamesPlayed)}{renderDiff("gamesPlayed")}</p>
-                                        <p style={{ margin: "2px 0" }}><b>Win rate:</b> {renderStatValue(summary.winrate, "%")}{renderDiff("winrate", "%")}</p>
-                                        <p style={{ margin: "2px 0" }}><b>KDA:</b> {renderStatValue(summary.kda)}{renderDiff("kda")}</p>
-                                        <p style={{ margin: "2px 0" }}><b>Damage / game:</b> {renderStatValue(summary.damagePerGame)}{renderDiff("damagePerGame")}</p>
-                                        <p style={{ margin: "2px 0" }}><b>Healing / game:</b> {renderStatValue(summary.healingPerGame)}{renderDiff("healingPerGame")}</p>
+                                        <p style={{ margin: "2px 0" }}><b>Games:</b> {renderStatValue(summary?.gamesPlayed)}{renderDiff("gamesPlayed")}</p>
+                                        <p style={{ margin: "2px 0" }}><b>Win rate:</b> {renderStatValue(summary?.winrate, "%")}{renderDiff("winrate", "%")}</p>
+                                        <p style={{ margin: "2px 0" }}><b>KDA:</b> {renderStatValue(summary?.kda)}{renderDiff("kda")}</p>
+                                        <p style={{ margin: "2px 0" }}><b>Damage / game:</b> {renderStatValue(summary?.damagePerGame)}{renderDiff("damagePerGame")}</p>
+                                        <p style={{ margin: "2px 0" }}><b>Healing / game:</b> {renderStatValue(summary?.healingPerGame)}{renderDiff("healingPerGame")}</p>
                                     </div>
                                 );
                             })}
@@ -445,13 +681,13 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
 
     return (
         <div style={{ marginBottom: 20 }}>
-            <h3>Player Search</h3>
+            <h3>{title}</h3>
             {user && (
                 <p style={{ marginTop: -8, color: "#566071" }}>
                     Last searches are saved for {user.username}.
                 </p>
             )}
-            {user && (
+            {user && !user.battlenet_player_id && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", margin: "10px 0 14px" }}>
                     <input
                         type="text"
@@ -466,76 +702,80 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                         disabled={linkLoading}
                         style={{ padding: "8px 16px" }}
                     >
-                        {linkLoading ? "Linking..." : user.battlenet_player_id ? "Update Link" : "Link BattleTag"}
+                        {linkLoading ? "Linking..." : "Link BattleTag"}
                     </button>
-                    {user.battlenet_username && (
-                        <span style={{ alignSelf: "center", color: "#566071" }}>
-                            Linked: {user.battlenet_username}
-                        </span>
-                    )}
                 </div>
+            )}
+            {user?.battlenet_player_id && user.battlenet_username && (
+                <p style={{ marginTop: -4, color: "#566071" }}>
+                    Linked Battle.net ID: {user.battlenet_username}
+                </p>
             )}
             {linkError && (
                 <p style={{ color: "red", marginTop: "8px" }}>
                     {linkError}
                 </p>
             )}
-            <div style={{ position: "relative", display: "inline-block" }}>
-                <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onFocus={handleInputFocus}
-                    onBlur={handleInputBlur}
-                    onKeyPress={handleKeyPress}
-                    placeholder="Enter username or BattleTag"
-                    style={{ padding: "8px", marginRight: "8px", width: "220px" }}
-                />
+            {!hideSearchControls && (
+                <>
+                    <div style={{ position: "relative", display: "inline-block" }}>
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onFocus={handleInputFocus}
+                            onBlur={handleInputBlur}
+                            onKeyPress={handleKeyPress}
+                            placeholder="Enter username or BattleTag"
+                            style={{ padding: "8px", marginRight: "8px", width: "220px" }}
+                        />
 
-                {showSuggestions && suggestions.length > 0 && (
-                    <div style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        width: "220px",
-                        background: "#fff",
-                        border: "1px solid #ccc",
-                        borderRadius: 6,
-                        boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
-                        zIndex: 10,
-                        marginTop: 6,
-                    }}>
-                        {suggestions.map((suggestion) => (
-                            <button
-                                key={suggestion.query}
-                                type="button"
-                                onMouseDown={() => handleSuggestionClick(suggestion.query)}
-                                style={{
-                                    width: "100%",
-                                    textAlign: "left",
-                                    padding: "10px 12px",
-                                    border: "none",
-                                    background: "transparent",
-                                    color: "#000",
-                                    cursor: "pointer",
-                                }}
-                            >
-                                {suggestion.label}
-                            </button>
-                        ))}
+                        {showSuggestions && suggestions.length > 0 && (
+                            <div style={{
+                                position: "absolute",
+                                top: "100%",
+                                left: 0,
+                                width: "220px",
+                                background: "#fff",
+                                border: "1px solid #ccc",
+                                borderRadius: 6,
+                                boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+                                zIndex: 10,
+                                marginTop: 6,
+                            }}>
+                                {suggestions.map((suggestion) => (
+                                    <button
+                                        key={suggestion.query}
+                                        type="button"
+                                        onMouseDown={() => handleSuggestionClick(suggestion.query)}
+                                        style={{
+                                            width: "100%",
+                                            textAlign: "left",
+                                            padding: "10px 12px",
+                                            border: "none",
+                                            background: "transparent",
+                                            color: "#000",
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        {suggestion.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
 
-            <button 
-                onClick={handleSearch}
-                disabled={loading}
-                style={{ padding: "8px 16px" }}
-            >
-                {loading ? "Searching..." : "Search"}
-            </button>
+                    <button
+                        onClick={() => handleSearch()}
+                        disabled={loading}
+                        style={{ padding: "8px 16px" }}
+                    >
+                        {loading ? "Searching..." : "Search"}
+                    </button>
+                </>
+            )}
 
-            {player && (
+            {showResults && player && (
                 <button
                     type="button"
                     onClick={() => setCompareMode((prev) => !prev)}
@@ -545,7 +785,7 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                 </button>
             )}
 
-            {user && player && (
+            {showResults && user && player && currentPlayerId !== user.battlenet_player_id && (
                 <button
                     type="button"
                     onClick={handleLinkCurrentPlayer}
@@ -556,7 +796,7 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                 </button>
             )}
 
-            {compareMode && player && (
+            {showResults && compareMode && player && (
                 <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap", marginLeft: 12, marginTop: 8 }}>
                     <input
                         type="text"
@@ -576,24 +816,26 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                 </span>
             )}
 
-            {error && (
+            {showResults && error && (
                 <p style={{ color: "red", marginTop: "10px" }}>
                     {error}
                 </p>
             )}
 
-            {compareError && compareMode && (
+            {showResults && compareError && compareMode && (
                 <p style={{ color: "red", marginTop: "10px" }}>
                     {compareError}
                 </p>
             )}
 
-            {player && (
+            {showResults && player && (
                 <div style={{ display: "grid", gridTemplateColumns: comparePlayer ? "1fr 1fr" : "1fr", gap: 16, marginTop: "10px" }}>
                     {renderPlayerCard({
                         playerData: player,
                         statsData: playerStats,
                         heroStatsData: heroStats,
+                        competitiveStatsData: competitiveStats,
+                        competitiveHeroStatsData: competitiveHeroStats,
                         showSort: true,
                         isCompare: false,
                     })}
@@ -602,6 +844,9 @@ export default function PlayerSearch({ authToken, user, onUserUpdate }) {
                         playerData: comparePlayer,
                         statsData: comparePlayerStats,
                         heroStatsData: compareHeroStats,
+                        competitiveStatsData: compareCompetitiveStats,
+                        competitiveHeroStatsData: compareCompetitiveHeroStats,
+                        baselineRanks: getCompetitiveRanks(player),
                         showSort: false,
                         isCompare: true,
                     })}

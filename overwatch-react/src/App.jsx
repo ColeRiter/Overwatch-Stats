@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from "react";
 /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
-import { getCurrentUser, getHeroes, getHeroStats, getMaps, loginUser, logoutUser, registerUser } from "./api";
+import { getCurrentUser, getHeroes, getMaps, loginUser, logoutUser, registerUser } from "./api";
 import HeroDetail from "./components/HeroDetail.jsx";
 import MapDetail from "./components/MapDetail.jsx";
 import PlayerSearch from "./components/PlayerSearch.jsx";
@@ -17,12 +17,13 @@ function App() {
     const [authLoading, setAuthLoading] = useState(false);
     const [heroes, setHeroes] = useState([]);
     const [maps, setMaps] = useState([]);
-    const [stats, setStats] = useState([]);
     const [selectedHero, setSelectedHero] = useState(null);
     const [selectedMap, setSelectedMap] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [view, setView] = useState("heroes"); // "heroes" or "maps"
+    const [view, setView] = useState("players");
+    const [globalPlayerSearch, setGlobalPlayerSearch] = useState("");
+    const [playerSearchRequest, setPlayerSearchRequest] = useState(null);
 
     async function restoreUser() {
         if (!authToken) {
@@ -82,9 +83,6 @@ function App() {
 
             const mapData = await getMaps();
             setMaps(mapData || []);
-
-            const statsData = await getHeroStats();
-            setStats(statsData || []);
         } catch (err) {
             console.error("load failed", err);
             setError("Failed to load data. Check console for details.");
@@ -101,26 +99,34 @@ function App() {
         restoreUser();
     }, [authToken]);
 
-    const statMap = {};
-    stats.forEach(s => statMap[s.hero?.toLowerCase()] = s);
-
-    if (selectedHero) {
-        return (
-            <HeroDetail
-                hero={selectedHero}
-                onBack={() => setSelectedHero(null)}
-            />
-        );
+    function handleNavChange(nextView) {
+        setView(nextView);
+        setSelectedHero(null);
+        setSelectedMap(null);
     }
 
-    if (selectedMap) {
-        return (
-            <MapDetail
-                map={selectedMap}
-                onBack={() => setSelectedMap(null)}
-            />
-        );
+    function handleGlobalPlayerSearch(e) {
+        e.preventDefault();
+        const query = globalPlayerSearch.trim();
+        if (!query) return;
+
+        setView("players");
+        setSelectedHero(null);
+        setSelectedMap(null);
+        setPlayerSearchRequest({
+            query,
+            token: Date.now(),
+        });
     }
+
+    const pageTitles = {
+        players: ["Player Search", "Search players and compare stats"],
+        profile: ["Profile", "Manage your account and linked Battle.net profile"],
+        heroes: ["Heroes", "Browse hero details"],
+        maps: ["Maps", "Browse map details"],
+    };
+
+    const [pageTitle, pageSubtitle] = pageTitles[view] || pageTitles.players;
 
     if (loading) {
         return (
@@ -138,21 +144,35 @@ function App() {
             <header className="page-header">
                 <div>
                     <h1>Overwatch Stats</h1>
-                    <p className="page-subtitle">View heroes and maps or search for players and compare</p>
+                    <p className="page-subtitle">{pageTitle} · {pageSubtitle}</p>
                 </div>
                 <div className="header-actions">
                     <div className="view-toggle">
                         <button
                             type="button"
+                            className={view === "players" ? "toggle-button active" : "toggle-button"}
+                            onClick={() => handleNavChange("players")}
+                        >
+                            Players
+                        </button>
+                        <button
+                            type="button"
+                            className={view === "profile" ? "toggle-button active" : "toggle-button"}
+                            onClick={() => handleNavChange("profile")}
+                        >
+                            Profile
+                        </button>
+                        <button
+                            type="button"
                             className={view === "heroes" ? "toggle-button active" : "toggle-button"}
-                            onClick={() => setView("heroes")}
+                            onClick={() => handleNavChange("heroes")}
                         >
                             Heroes
                         </button>
                         <button
                             type="button"
                             className={view === "maps" ? "toggle-button active" : "toggle-button"}
-                            onClick={() => setView("maps")}
+                            onClick={() => handleNavChange("maps")}
                         >
                             Maps
                         </button>
@@ -211,44 +231,106 @@ function App() {
                 <div className="error-message">{error}</div>
             )}
 
-            <div className="search-container">
-                <PlayerSearch authToken={authToken} user={user} onUserUpdate={setUser} />
-            </div>
+            <form className="global-search" onSubmit={handleGlobalPlayerSearch}>
+                <input
+                    type="text"
+                    value={globalPlayerSearch}
+                    onChange={(e) => setGlobalPlayerSearch(e.target.value)}
+                    placeholder="Search player or BattleTag"
+                />
+                <button type="submit">Search</button>
+            </form>
 
-            <div className="cards-grid">
-                {view === "heroes" && heroes.length === 0 && (
-                    <p className="empty-state">No heroes available.</p>
-                )}
+            {view === "players" && (
+                <div className="search-container">
+                    <PlayerSearch
+                        authToken={authToken}
+                        user={user}
+                        onUserUpdate={setUser}
+                        searchRequest={playerSearchRequest}
+                        hideSearchControls
+                    />
+                </div>
+            )}
 
-                {view === "maps" && maps.length === 0 && (
-                    <p className="empty-state">No maps available.</p>
-                )}
+            {view === "profile" && (
+                <section className="profile-page">
+                    {user ? (
+                        <>
+                            <h2>{user.username}</h2>
+                            <p>
+                                {user.battlenet_player_id
+                                    ? `Linked Battle.net ID: ${user.battlenet_username || user.battlenet_tag || user.battlenet_player_id}`
+                                    : "No Battle.net ID linked yet."}
+                            </p>
+                            <PlayerSearch
+                                authToken={authToken}
+                                user={user}
+                                onUserUpdate={setUser}
+                                hideSearchControls
+                                title="Your Battle.net Stats"
+                            />
+                        </>
+                    ) : (
+                        <p className="empty-state">Log in to view your profile.</p>
+                    )}
+                </section>
+            )}
 
-                {view === "heroes" && heroes.map(hero => (
-                    <button
-                        key={hero.key}
-                        type="button"
-                        className="card"
-                        onClick={() => setSelectedHero(hero)}
-                    >
-                        <img className="card-image" src={hero.portrait} alt={hero.name} />
-                        <h3 className="card-title">{hero.name}</h3>
-                    </button>
-                ))}
+            {view === "heroes" && (
+                selectedHero ? (
+                    <HeroDetail
+                        hero={selectedHero}
+                        onBack={() => setSelectedHero(null)}
+                    />
+                ) : (
+                    <div className="cards-grid">
+                        {heroes.length === 0 && (
+                            <p className="empty-state">No heroes available.</p>
+                        )}
 
-                {view === "maps" && maps.map(map => (
-                    <button
-                        key={map.key}
-                        type="button"
-                        className="card"
-                        onClick={() => setSelectedMap(map)}
-                    >
-                        <img className="card-image" src={map.screenshot} alt={map.name} />
-                        <h3 className="card-title">{map.name}</h3>
-                        <p className="card-subtitle">{map.location}</p>
-                    </button>
-                ))}
-            </div>
+                        {heroes.map(hero => (
+                            <button
+                                key={hero.key}
+                                type="button"
+                                className="card"
+                                onClick={() => setSelectedHero(hero)}
+                            >
+                                <img className="card-image" src={hero.portrait} alt={hero.name} />
+                                <h3 className="card-title">{hero.name}</h3>
+                            </button>
+                        ))}
+                    </div>
+                )
+            )}
+
+            {view === "maps" && (
+                selectedMap ? (
+                    <MapDetail
+                        map={selectedMap}
+                        onBack={() => setSelectedMap(null)}
+                    />
+                ) : (
+                    <div className="cards-grid">
+                        {maps.length === 0 && (
+                            <p className="empty-state">No maps available.</p>
+                        )}
+
+                        {maps.map(map => (
+                            <button
+                                key={map.key}
+                                type="button"
+                                className="card"
+                                onClick={() => setSelectedMap(map)}
+                            >
+                                <img className="card-image" src={map.screenshot} alt={map.name} />
+                                <h3 className="card-title">{map.name}</h3>
+                                <p className="card-subtitle">{map.location}</p>
+                            </button>
+                        ))}
+                    </div>
+                )
+            )}
         </div>
     );
 }

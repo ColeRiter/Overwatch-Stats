@@ -120,6 +120,44 @@
   margin-bottom: 24px;
 }
 
+.global-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 22px;
+  max-width: 460px;
+}
+
+.global-search input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-h);
+  background: var(--bg);
+}
+
+.global-search button {
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  padding: 10px 16px;
+}
+
+.profile-page {
+  display: grid;
+  gap: 14px;
+  max-width: 760px;
+}
+
+.profile-page h2,
+.profile-page p {
+  margin: 0;
+}
+
 .error-message {
   color: #b91c1c;
   background: rgba(248, 113, 113, 0.15);
@@ -279,5 +317,9 @@
 
   .detail-meta {
     gap: 12px;
+  }
+
+  .global-search {
+    max-width: none;
   }
 }
