@@ -8,6 +8,7 @@ import {
     getPlayerStatsSummary,
     saveSearchHistory,
 } from "../api";
+import { POPULAR_PLAYERS, HISTORY_LIMIT } from "../config/searchConfig";
 
 function formatNumber(value) {
     if (typeof value !== "number" || Number.isNaN(value)) return value;
@@ -63,7 +64,7 @@ function formatRank(rankData) {
     return "Unranked";
 }
 
-const RANK_ORDER = ["bronze", "silver", "gold", "platinum", "diamond", "master", "grandmaster", "champion"];
+const RANK_ORDER = ["bronze", "silver", "gold", "platinum", "diamond", "master", "grandmaster", "ultimate"];
 
 function normalizeRankName(value) {
     if (!value) return "";
@@ -80,7 +81,7 @@ function getRankScore(rankData) {
     if (!rankData) return null;
 
     if (typeof rankData === "string") {
-        const match = rankData.match(/(bronze|silver|gold|plat(?:inum)?|diamond|masters?|grand\s*masters?|grandmasters?|champion)\s*(\d)?/i);
+        const match = rankData.match(/(bronze|silver|gold|plat(?:inum)?|diamond|masters?|grand\s*masters?|grandmasters?|ultimate)\s*(\d)?/i);
         if (!match) return null;
 
         const rank = normalizeRankName(match[1]);
@@ -127,6 +128,7 @@ export default function PlayerSearch({
     onUserUpdate,
     searchRequest,
     hideSearchControls = false,
+    hidePrimarySearch = false,
     showResults = true,
     title = "Player Search",
 }) {
@@ -145,6 +147,8 @@ export default function PlayerSearch({
     const [compareError, setCompareError] = useState(null);
     const [suggestions, setSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [savedHistory, setSavedHistory] = useState([]);
+    const [showCompareSuggestions, setShowCompareSuggestions] = useState(false);
     const [sortField, setSortField] = useState("winrate");
     const [error, setError] = useState(null);
     const [linkError, setLinkError] = useState(null);
@@ -154,7 +158,7 @@ export default function PlayerSearch({
 
     async function loadSavedSearches() {
         if (!authToken || !user) {
-            setSuggestions([]);
+            setSavedHistory([]);
             return;
         }
 
@@ -166,11 +170,16 @@ export default function PlayerSearch({
                 score: new Date(item.searched_at).getTime(),
             }));
 
-            setSuggestions(historySuggestions.slice(0, 3));
-
-            if (historySuggestions[0]) {
-                setInput(historySuggestions[0].query);
+            // remove duplicate queries, keep most recent first
+            const seen = new Set();
+            const unique = [];
+            for (const item of historySuggestions) {
+                if (seen.has(item.query)) continue;
+                seen.add(item.query);
+                unique.push(item);
             }
+
+            setSavedHistory(unique.slice(0, HISTORY_LIMIT));
         } catch (err) {
             console.error("loadSavedSearches failed", err);
         }
@@ -179,6 +188,9 @@ export default function PlayerSearch({
     useEffect(() => {
         loadSavedSearches();
     }, [authToken, user?.id]);
+
+    // Use centralized config for easy mutation
+    // (popular players and history limit can be changed in one place)
 
     useEffect(() => {
         if (!user) {
@@ -283,9 +295,18 @@ export default function PlayerSearch({
                 }))
                 .filter((item) => item.label)
                 .sort((a, b) => b.score - a.score)
-                .slice(0, 3);
+                ;
 
-            setSuggestions(newSuggestions);
+            // dedupe suggestions by query, keep highest-scoring order
+            const seenSug = new Set();
+            const uniqueSug = [];
+            for (const s of newSuggestions) {
+                if (seenSug.has(s.query)) continue;
+                seenSug.add(s.query);
+                uniqueSug.push(s);
+            }
+
+            setSuggestions(uniqueSug.slice(0, 3));
             setPlayer(summary);
             setPlayerStats(statsSummary);
 
@@ -441,6 +462,7 @@ export default function PlayerSearch({
     }
 
     function handleInputFocus() {
+        console.debug("PlayerSearch: input focused");
         setShowSuggestions(true);
     }
 
@@ -448,9 +470,42 @@ export default function PlayerSearch({
         setTimeout(() => setShowSuggestions(false), 150);
     }
 
+    function handleCompareFocus() {
+        console.debug("PlayerSearch: compare input focused");
+        setShowCompareSuggestions(true);
+    }
+
+    // Debug when dropdown visibility changes
+    useEffect(() => {
+        if (showSuggestions) console.debug("PlayerSearch: main dropdown visible");
+    }, [showSuggestions]);
+
+    useEffect(() => {
+        if (showCompareSuggestions) console.debug("PlayerSearch: compare dropdown visible");
+    }, [showCompareSuggestions]);
+
+    function handleCompareBlur() {
+        setTimeout(() => setShowCompareSuggestions(false), 150);
+    }
+
     function handleSuggestionClick(value) {
         setInput(value);
         setShowSuggestions(false);
+    }
+
+    function handleCompareSuggestionClick(value) {
+        setCompareInput(value);
+        setShowCompareSuggestions(false);
+    }
+
+    function handlePopularClick(value, forCompare = false) {
+        if (forCompare) {
+            setCompareInput(value);
+            setShowCompareSuggestions(false);
+        } else {
+            setInput(value);
+            setShowSuggestions(false);
+        }
     }
 
     const primaryHeroStatsByKey = playerStats?.heroes ?? {};
@@ -716,7 +771,7 @@ export default function PlayerSearch({
                     {linkError}
                 </p>
             )}
-            {!hideSearchControls && (
+            {!hideSearchControls && !hidePrimarySearch && (
                 <>
                     <div style={{ position: "relative", display: "inline-block" }}>
                         <input
@@ -725,12 +780,14 @@ export default function PlayerSearch({
                             onChange={(e) => setInput(e.target.value)}
                             onFocus={handleInputFocus}
                             onBlur={handleInputBlur}
+                            onMouseDown={() => { console.debug("PlayerSearch: main input mousedown"); setShowSuggestions(true); }}
+                            onClick={() => { console.debug("PlayerSearch: main input click"); setShowSuggestions(true); }}
                             onKeyPress={handleKeyPress}
                             placeholder="Enter username or BattleTag"
                             style={{ padding: "8px", marginRight: "8px", width: "220px" }}
                         />
 
-                        {showSuggestions && suggestions.length > 0 && (
+                        {showSuggestions && (
                             <div style={{
                                 position: "absolute",
                                 top: "100%",
@@ -740,27 +797,54 @@ export default function PlayerSearch({
                                 border: "1px solid #ccc",
                                 borderRadius: 6,
                                 boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
-                                zIndex: 10,
+                                    zIndex: 9999,
                                 marginTop: 6,
                             }}>
-                                {suggestions.map((suggestion) => (
-                                    <button
-                                        key={suggestion.query}
-                                        type="button"
-                                        onMouseDown={() => handleSuggestionClick(suggestion.query)}
-                                        style={{
-                                            width: "100%",
-                                            textAlign: "left",
-                                            padding: "10px 12px",
-                                            border: "none",
-                                            background: "transparent",
-                                            color: "#000",
-                                            cursor: "pointer",
-                                        }}
-                                    >
-                                        {suggestion.label}
-                                    </button>
-                                ))}
+                                <div style={{ padding: 8, borderBottom: "1px solid #eee" }}>
+                                    <strong style={{ display: "block", marginBottom: 6 }}>Popular Players</strong>
+                                    {POPULAR_PLAYERS.map((p) => (
+                                        <button
+                                            key={p.query}
+                                            type="button"
+                                            onMouseDown={() => handlePopularClick(p.query)}
+                                            style={{
+                                                width: "100%",
+                                                textAlign: "left",
+                                                padding: "6px 8px",
+                                                border: "none",
+                                                background: "transparent",
+                                                color: "#000",
+                                                cursor: "pointer",
+                                            }}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {savedHistory.length > 0 && (
+                                    <div style={{ padding: 8 }}>
+                                        <strong style={{ display: "block", marginBottom: 6 }}>History</strong>
+                                        {savedHistory.map((s) => (
+                                            <button
+                                                key={s.query}
+                                                type="button"
+                                                onMouseDown={() => handleSuggestionClick(s.query)}
+                                                style={{
+                                                    width: "100%",
+                                                    textAlign: "left",
+                                                    padding: "6px 8px",
+                                                    border: "none",
+                                                    background: "transparent",
+                                                    color: "#000",
+                                                    cursor: "pointer",
+                                                }}
+                                            >
+                                                {s.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -798,13 +882,79 @@ export default function PlayerSearch({
 
             {showResults && compareMode && player && (
                 <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap", marginLeft: 12, marginTop: 8 }}>
-                    <input
-                        type="text"
-                        value={compareInput}
-                        onChange={(e) => setCompareInput(e.target.value)}
-                        placeholder="Enter another username"
-                        style={{ padding: "8px", width: "220px" }}
-                    />
+                    <div style={{ position: "relative" }}>
+                        <input
+                            type="text"
+                            value={compareInput}
+                            onChange={(e) => setCompareInput(e.target.value)}
+                            onFocus={handleCompareFocus}
+                            onBlur={handleCompareBlur}
+                            placeholder="Enter another username"
+                            style={{ padding: "8px", width: "220px" }}
+                        />
+
+                        {showCompareSuggestions && (
+                            <div style={{
+                                position: "absolute",
+                                top: "100%",
+                                left: 0,
+                                width: "220px",
+                                background: "#fff",
+                                border: "1px solid #ccc",
+                                borderRadius: 6,
+                                boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+                                    zIndex: 9999,
+                                marginTop: 6,
+                            }}>
+                                <div style={{ padding: 8, borderBottom: "1px solid #eee" }}>
+                                    <strong style={{ display: "block", marginBottom: 6 }}>Popular Players</strong>
+                                    {POPULAR_PLAYERS.map((p) => (
+                                        <button
+                                            key={p.query}
+                                            type="button"
+                                            onMouseDown={() => handlePopularClick(p.query, true)}
+                                            style={{
+                                                width: "100%",
+                                                textAlign: "left",
+                                                padding: "6px 8px",
+                                                border: "none",
+                                                background: "transparent",
+                                                color: "#000",
+                                                cursor: "pointer",
+                                            }}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {savedHistory.length > 0 && (
+                                    <div style={{ padding: 8 }}>
+                                        <strong style={{ display: "block", marginBottom: 6 }}>History</strong>
+                                        {savedHistory.map((s) => (
+                                            <button
+                                                key={s.query}
+                                                type="button"
+                                                onMouseDown={() => handleCompareSuggestionClick(s.query)}
+                                                style={{
+                                                    width: "100%",
+                                                    textAlign: "left",
+                                                    padding: "6px 8px",
+                                                    border: "none",
+                                                    background: "transparent",
+                                                    color: "#000",
+                                                    cursor: "pointer",
+                                                }}
+                                            >
+                                                {s.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                     <button
                         type="button"
                         onClick={handleCompareSearch}

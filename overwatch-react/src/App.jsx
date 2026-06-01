@@ -22,8 +22,8 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [view, setView] = useState("players");
-    const [globalPlayerSearch, setGlobalPlayerSearch] = useState("");
     const [playerSearchRequest, setPlayerSearchRequest] = useState(null);
+
 
     async function restoreUser() {
         if (!authToken) {
@@ -91,6 +91,7 @@ function App() {
         }
     }
 
+
     useEffect(() => {
         load();
     }, []);
@@ -99,25 +100,15 @@ function App() {
         restoreUser();
     }, [authToken]);
 
+    
+
     function handleNavChange(nextView) {
         setView(nextView);
         setSelectedHero(null);
         setSelectedMap(null);
     }
 
-    function handleGlobalPlayerSearch(e) {
-        e.preventDefault();
-        const query = globalPlayerSearch.trim();
-        if (!query) return;
-
-        setView("players");
-        setSelectedHero(null);
-        setSelectedMap(null);
-        setPlayerSearchRequest({
-            query,
-            token: Date.now(),
-        });
-    }
+    
 
     const pageTitles = {
         players: ["Player Search", "Search players and compare stats"],
@@ -231,15 +222,7 @@ function App() {
                 <div className="error-message">{error}</div>
             )}
 
-            <form className="global-search" onSubmit={handleGlobalPlayerSearch}>
-                <input
-                    type="text"
-                    value={globalPlayerSearch}
-                    onChange={(e) => setGlobalPlayerSearch(e.target.value)}
-                    placeholder="Search player or BattleTag"
-                />
-                <button type="submit">Search</button>
-            </form>
+            
 
             {view === "players" && (
                 <div className="search-container">
@@ -248,7 +231,6 @@ function App() {
                         user={user}
                         onUserUpdate={setUser}
                         searchRequest={playerSearchRequest}
-                        hideSearchControls
                     />
                 </div>
             )}
@@ -258,16 +240,12 @@ function App() {
                     {user ? (
                         <>
                             <h2>{user.username}</h2>
-                            <p>
-                                {user.battlenet_player_id
-                                    ? `Linked Battle.net ID: ${user.battlenet_username || user.battlenet_tag || user.battlenet_player_id}`
-                                    : "No Battle.net ID linked yet."}
-                            </p>
+                            
                             <PlayerSearch
                                 authToken={authToken}
                                 user={user}
                                 onUserUpdate={setUser}
-                                hideSearchControls
+                                hidePrimarySearch
                                 title="Your Battle.net Stats"
                             />
                         </>
