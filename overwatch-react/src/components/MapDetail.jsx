@@ -1,7 +1,7 @@
 export default function MapDetail({ map, onBack }) {
     return (
         <div className="detail-page">
-            <button className="detail-back" onClick={onBack}>← Back</button>
+            <button className="detail-back" onClick={onBack}>Back</button>
 
             <div className="detail-card">
                 <h1>{map.name}</h1>

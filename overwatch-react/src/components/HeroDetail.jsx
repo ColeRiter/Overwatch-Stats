@@ -25,7 +25,7 @@ export default function HeroDetail({ hero, onBack }) {
 
     return (
         <div className="detail-page">
-            <button className="detail-back" onClick={onBack}>← Back</button>
+            <button className="detail-back" onClick={onBack}>Back</button>
 
             <div className="detail-card">
                 <h1>{data.name}</h1>

@@ -22,7 +22,6 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [view, setView] = useState("players");
-    const [playerSearchRequest, setPlayerSearchRequest] = useState(null);
 
 
     async function restoreUser() {
@@ -230,7 +229,6 @@ function App() {
                         authToken={authToken}
                         user={user}
                         onUserUpdate={setUser}
-                        searchRequest={playerSearchRequest}
                     />
                 </div>
             )}

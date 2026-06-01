@@ -145,7 +145,6 @@ export default function PlayerSearch({
     const [comparePlayerStats, setComparePlayerStats] = useState(null);
     const [compareCompetitiveStats, setCompareCompetitiveStats] = useState(null);
     const [compareError, setCompareError] = useState(null);
-    const [suggestions, setSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [savedHistory, setSavedHistory] = useState([]);
     const [showCompareSuggestions, setShowCompareSuggestions] = useState(false);
@@ -188,9 +187,6 @@ export default function PlayerSearch({
     useEffect(() => {
         loadSavedSearches();
     }, [authToken, user?.id]);
-
-    // Use centralized config for easy mutation
-    // (popular players and history limit can be changed in one place)
 
     useEffect(() => {
         if (!user) {
@@ -287,26 +283,6 @@ export default function PlayerSearch({
                 query: trimmedInput,
             });
 
-            const newSuggestions = (res.results ?? [])
-                .map((item) => ({
-                    label: item.username || item.name || item.player_name || item.player_id || "",
-                    query: item.username || item.name || item.player_name || item.player_id || "",
-                    score: item.games_played ?? item.playtime ?? item.rating ?? 0,
-                }))
-                .filter((item) => item.label)
-                .sort((a, b) => b.score - a.score)
-                ;
-
-            // dedupe suggestions by query, keep highest-scoring order
-            const seenSug = new Set();
-            const uniqueSug = [];
-            for (const s of newSuggestions) {
-                if (seenSug.has(s.query)) continue;
-                seenSug.add(s.query);
-                uniqueSug.push(s);
-            }
-
-            setSuggestions(uniqueSug.slice(0, 3));
             setPlayer(summary);
             setPlayerStats(statsSummary);
 
@@ -462,7 +438,6 @@ export default function PlayerSearch({
     }
 
     function handleInputFocus() {
-        console.debug("PlayerSearch: input focused");
         setShowSuggestions(true);
     }
 
@@ -471,18 +446,8 @@ export default function PlayerSearch({
     }
 
     function handleCompareFocus() {
-        console.debug("PlayerSearch: compare input focused");
         setShowCompareSuggestions(true);
     }
-
-    // Debug when dropdown visibility changes
-    useEffect(() => {
-        if (showSuggestions) console.debug("PlayerSearch: main dropdown visible");
-    }, [showSuggestions]);
-
-    useEffect(() => {
-        if (showCompareSuggestions) console.debug("PlayerSearch: compare dropdown visible");
-    }, [showCompareSuggestions]);
 
     function handleCompareBlur() {
         setTimeout(() => setShowCompareSuggestions(false), 150);
@@ -780,8 +745,8 @@ export default function PlayerSearch({
                             onChange={(e) => setInput(e.target.value)}
                             onFocus={handleInputFocus}
                             onBlur={handleInputBlur}
-                            onMouseDown={() => { console.debug("PlayerSearch: main input mousedown"); setShowSuggestions(true); }}
-                            onClick={() => { console.debug("PlayerSearch: main input click"); setShowSuggestions(true); }}
+                            onMouseDown={() => setShowSuggestions(true)}
+                            onClick={() => setShowSuggestions(true)}
                             onKeyPress={handleKeyPress}
                             placeholder="Enter username or BattleTag"
                             style={{ padding: "8px", marginRight: "8px", width: "220px" }}

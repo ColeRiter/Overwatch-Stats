@@ -1,16 +1,72 @@
-# React + Vite
+# Overwatch Stats Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A full-stack Overwatch stats dashboard for searching players, browsing heroes and maps, comparing player performance, and saving authenticated search history.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Player search with BattleTag support
+- Player comparison view with hero statistics and competitive rank summaries
+- Hero and map browsing using Overfast API data
+- User registration, login, logout, and session tokens
+- Battle.net profile linking
+- Saved search history for signed-in users
+- Flask API proxy to avoid client-side cross-origin issues
+- SQLite-backed user, session, and search-history storage
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React 19
+- Vite
+- Flask
+- SQLite
+- Overfast API
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Install frontend dependencies:
+
+```bash
+npm install
+```
+
+Install backend dependencies:
+
+```bash
+pip install -r server/requirements.txt
+```
+
+Run the backend:
+
+```bash
+npm run backend
+```
+
+Run the frontend in another terminal:
+
+```bash
+npm run dev
+```
+
+The Vite dev server proxies `/api` requests to `http://127.0.0.1:5000`.
+
+## Scripts
+
+- `npm run dev` starts the Vite development server
+- `npm run backend` starts the Flask backend
+- `npm run build` creates a production frontend build
+- `npm run lint` checks the React source with ESLint
+- `npm run preview` previews the production build
+
+## Environment Variables
+
+Backend:
+
+- `OVERFAST_BASE_URL` overrides the upstream Overfast API URL
+- `UPSTREAM_TIMEOUT_SECONDS` controls upstream request timeout
+- `DATABASE_PATH` sets the SQLite database path
+- `CORS_ORIGIN` controls the allowed CORS origin
+- `FLASK_HOST`, `FLASK_PORT`, and `FLASK_DEBUG` configure local Flask startup
+
+Frontend:
+
+- `VITE_API_BASE_URL` overrides the API base URL. Defaults to `/api`.
