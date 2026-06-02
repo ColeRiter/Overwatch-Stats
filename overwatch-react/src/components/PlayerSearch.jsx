@@ -27,6 +27,7 @@ function renderStatValue(value, suffix = "") {
 function getHeroSummaryFields(stats) {
     if (!stats) return null;
 
+    // Normalize mixed API shapes into the fields used by the hero stat cards.
     const total = stats.total || {};
     const gamesPlayed = stats.games_played ?? stats.games?.played ?? 0;
     const safeGamesPlayed = Math.max(1, typeof gamesPlayed === "number" ? gamesPlayed : 1);
@@ -80,6 +81,7 @@ function normalizeRankName(value) {
 function getRankScore(rankData) {
     if (!rankData) return null;
 
+    // Convert rank divisions into a comparable score so role ranks can show deltas.
     if (typeof rankData === "string") {
         const match = rankData.match(/(bronze|silver|gold|plat(?:inum)?|diamond|masters?|grand\s*masters?|grandmasters?|ultimate)\s*(\d)?/i);
         if (!match) return null;
@@ -169,7 +171,7 @@ export default function PlayerSearch({
                 score: new Date(item.searched_at).getTime(),
             }));
 
-            // remove duplicate queries, keep most recent first
+            // Keep the most recent version of each query so suggestions stay useful.
             const seen = new Set();
             const unique = [];
             for (const item of historySuggestions) {
@@ -213,6 +215,7 @@ export default function PlayerSearch({
     }, [searchRequest?.token]);
 
     async function loadPlayerById(playerId, options = {}) {
+        // Fetch profile, quickplay stats, and competitive stats together to keep the UI responsive.
         const [summary, statsSummary, competitiveStatsSummary] = await Promise.all([
             getPlayerSummary(playerId),
             getPlayerStatsSummary(playerId),
@@ -258,11 +261,11 @@ export default function PlayerSearch({
         if (!trimmedInput) return;
 
         setLoading(true);
-            setError(null);
-            setPlayer(null);
-            setCurrentPlayerId("");
-            setPlayerStats(null);
-            setCompetitiveStats(null);
+        setError(null);
+        setPlayer(null);
+        setCurrentPlayerId("");
+        setPlayerStats(null);
+        setCompetitiveStats(null);
         setCompareMode(false);
         setCompareInput("");
         setComparePlayer(null);
@@ -475,6 +478,7 @@ export default function PlayerSearch({
 
     const primaryHeroStatsByKey = playerStats?.heroes ?? {};
     const compareHeroStatsByKey = comparePlayerStats?.heroes ?? {};
+    // Use the union of hero keys so comparison mode can show heroes only one player used.
     const sharedHeroKeys = Array.from(new Set([
         ...Object.keys(primaryHeroStatsByKey),
         ...(comparePlayer ? Object.keys(compareHeroStatsByKey) : []),
@@ -523,6 +527,7 @@ export default function PlayerSearch({
         const primarySummary = getHeroSummaryFields(primaryHeroStatsByKey[heroKey]);
         const summary = getHeroSummaryFields(heroData);
 
+        // Store per-stat deltas once so rendering can focus on presentation.
         return {
             heroKey,
             heroData,

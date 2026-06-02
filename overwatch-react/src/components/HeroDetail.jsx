@@ -8,6 +8,7 @@ export default function HeroDetail({ hero, onBack }) {
     const [roleData, setRoleData] = useState(null);
 
     async function load() {
+        // Load role metadata separately because the hero endpoint only returns the role key.
         const res = await getHeroDetails(hero.key);
         setData(res);
 

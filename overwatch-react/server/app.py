@@ -34,6 +34,7 @@ def get_db_connection():
 
 def init_db():
     with get_db_connection() as connection:
+        # Create the local auth/profile tables used by the React app.
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -76,6 +77,7 @@ def init_db():
             "battlenet_username": "ALTER TABLE users ADD COLUMN battlenet_username TEXT",
             "battlenet_avatar": "ALTER TABLE users ADD COLUMN battlenet_avatar TEXT",
         }
+        # Add new profile columns when an existing database was created before linking was added.
         for column_name, statement in migrations.items():
             if column_name not in existing_columns:
                 connection.execute(statement)
@@ -86,6 +88,7 @@ def now_iso():
 
 
 def public_user(row):
+    # Only return fields that are safe and useful for the frontend session state.
     return {
         "id": row["id"],
         "username": row["username"],
@@ -98,6 +101,7 @@ def public_user(row):
 
 
 def get_auth_user():
+    # Sessions are stored server-side, so the bearer token only needs to identify a row.
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None
@@ -382,6 +386,7 @@ def proxy_overfast(upstream_path: str):
             502,
         )
 
+    # Drop hop-by-hop headers so Flask can build a clean response to the browser.
     excluded_headers = {
         "content-encoding",
         "content-length",

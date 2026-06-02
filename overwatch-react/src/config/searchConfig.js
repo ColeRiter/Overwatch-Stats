@@ -1,3 +1,4 @@
+// Starter suggestions make the search usable before a user has saved history.
 export const POPULAR_PLAYERS = [
   { label: "xQc", query: "xQc#1293" },
   { label: "pge", query: "pge#11208" },

@@ -1,4 +1,5 @@
 .app-shell {
+  /* Center the application while keeping enough width for side-by-side player comparisons. */
   padding: 32px 24px;
   max-width: 1180px;
   margin: 0 auto;

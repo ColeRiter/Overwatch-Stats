@@ -18,6 +18,7 @@ export default function SearchInput({
     }
 
     function handleBlur() {
+        // Delay closing so a mouse click on a suggestion can register first.
         setTimeout(() => {
             setShowSuggestions(false);
         }, 100);

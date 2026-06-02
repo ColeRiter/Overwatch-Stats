@@ -8,6 +8,7 @@ import "./index.css";
 import "./styles.css";
 
 function App() {
+    // Keep the token in localStorage so refreshes do not force the user to log in again.
     const [authToken, setAuthToken] = useState(() => localStorage.getItem("authToken") || "");
     const [user, setUser] = useState(null);
     const [authMode, setAuthMode] = useState("login");
@@ -102,6 +103,7 @@ function App() {
     
 
     function handleNavChange(nextView) {
+        // Reset detail selections when switching sections so each page opens at its list view.
         setView(nextView);
         setSelectedHero(null);
         setSelectedMap(null);

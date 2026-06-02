@@ -5,6 +5,7 @@ function authHeaders(token) {
 }
 
 async function requestJson(path, options = {}) {
+    // Shared request helper keeps auth endpoints consistent and surfaces backend errors clearly.
     const res = await fetch(`${BASE_URL}${path}`, {
         ...options,
         headers: {
@@ -93,7 +94,7 @@ export async function getHeroDetails(heroKey) {
 
 export async function searchPlayer(name) {
     try {
-        // Convert BattleTag format (# to -) if needed
+        // Overfast expects BattleTags in the URL-safe name-1234 format.
         const formattedName = name.replace("#", "-");
         const res = await fetch(`${BASE_URL}/players?name=${encodeURIComponent(formattedName)}`);
         const data = await res.json();
@@ -117,6 +118,7 @@ export async function getPlayerSummary(playerId) {
 
 export async function getPlayerStatsSummary(playerId, filters = {}) {
     try {
+        // Only include filters that were selected so the endpoint can use its defaults.
         const params = new URLSearchParams();
         if (filters.gamemode) params.set("gamemode", filters.gamemode);
         if (filters.platform) params.set("platform", filters.platform);
