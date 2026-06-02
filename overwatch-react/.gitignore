@@ -24,3 +24,7 @@ server/*.db-*
 *.njsproj
 *.sln
 *.sw?
+.venv/
+venv/
+__pycache__/
+*.pyc
