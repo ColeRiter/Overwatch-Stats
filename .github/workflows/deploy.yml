@@ -18,6 +18,9 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Confirm Azure subscription
+        run: az account show
+
       - name: Login to Azure Container Registry
         run: |
           ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
