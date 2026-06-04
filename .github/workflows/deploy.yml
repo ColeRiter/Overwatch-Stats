@@ -27,6 +27,14 @@ jobs:
           ACR_NAME="${ACR_LOGIN_SERVER%%.*}"
           az acr login --name "$ACR_NAME"
 
+      - name: Optional Docker login to ACR with admin credentials
+        if: ${{ secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
